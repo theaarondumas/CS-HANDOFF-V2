@@ -15,10 +15,15 @@ type HandoffRow = {
   last_update_at?: string | null;
 };
 
-/** Single source of truth: what counts as RESOLVED in UI */
+/**
+ * ✅ Canonical cs_status enum values (confirmed):
+ * open | needs_followup | resolved
+ *
+ * Single source of truth: what counts as RESOLVED in UI
+ */
 function isResolvedStatus(status?: string | null) {
-  const s = (status || "open").toLowerCase();
-  return s === "resolved" || s === "closed";
+  const s = (status || "open").trim().toLowerCase();
+  return s === "resolved";
 }
 
 /** Soft glow by priority (low/medium/high) — OPEN only */
@@ -43,7 +48,7 @@ function glowStyleForPriority(priority?: string) {
   };
 }
 
-/** RESOLVED/closed style — hard “dead” look */
+/** RESOLVED style — hard “dead” look */
 function resolvedCardStyle(): React.CSSProperties {
   return {
     opacity: 0.35,
@@ -56,7 +61,9 @@ function resolvedCardStyle(): React.CSSProperties {
 
 /** Tiny status pill */
 function StatusPill({ status }: { status?: string | null }) {
-  const isClosed = isResolvedStatus(status);
+  const s = (status || "open").trim().toLowerCase();
+  const resolved = s === "resolved";
+  const followup = s === "needs_followup";
   return (
     <span
       style={{
@@ -68,7 +75,7 @@ function StatusPill({ status }: { status?: string | null }) {
         fontWeight: 800,
       }}
     >
-      {isClosed ? "RESOLVED" : "OPEN"}
+      {resolved ? "RESOLVED" : followup ? "FOLLOW-UP" : "OPEN"}
     </span>
   );
 }
@@ -213,6 +220,7 @@ export default function Page() {
     setSessionEmail(null);
     setUserId(null);
     setHandoffs([]);
+    router.push("/auth");
   }
 
   function onRowClick(id: string) {
@@ -221,21 +229,31 @@ export default function Page() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", padding: 24, fontFamily: "system-ui" }}>
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        fontFamily: "system-ui",
+        maxWidth: 980,
+        margin: "0 auto",
+        overflowX: "hidden",
+      }}
+    >
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           gap: 12,
           alignItems: "flex-start",
+          flexWrap: "wrap",
         }}
       >
-        <div>
+        <div style={{ minWidth: 260 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>CS HANDOFF — Feed</h1>
 
           {/* Debug watermark (remove later) */}
           <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
-            FEED_BUILD: RESOLVED_UI_V3_SINGLE_TRUTH
+            FEED_BUILD: RESOLVED_UI_V4_AUTH_BUTTON
           </div>
 
           <p style={{ opacity: 0.75, marginTop: 8, marginBottom: 0 }}>
@@ -257,6 +275,25 @@ export default function Page() {
             justifyContent: "flex-end",
           }}
         >
+          {/* ✅ NEW: Sign-in button when logged out */}
+          {!userId && (
+            <button
+              onClick={() => router.push("/auth")}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#fff",
+                cursor: "pointer",
+                opacity: 0.95,
+                fontWeight: 800,
+              }}
+            >
+              Sign In
+            </button>
+          )}
+
           <button
             onClick={() => setShowResolved((v) => !v)}
             style={{
@@ -350,9 +387,26 @@ export default function Page() {
             }}
           >
             <p style={{ margin: 0, opacity: 0.85 }}>
-              You’re not signed in. Go back to your auth screen and sign in with
+              You’re not signed in. Use the <b>Sign In</b> button above to get a
               magic link.
             </p>
+
+            <button
+              onClick={() => router.push("/auth")}
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #333",
+                background: "transparent",
+                color: "#fff",
+                cursor: "pointer",
+                opacity: 0.95,
+                fontWeight: 800,
+              }}
+            >
+              Go to Sign In
+            </button>
           </div>
         ) : !hasData ? (
           <div
@@ -373,9 +427,8 @@ export default function Page() {
         ) : (
           <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
             {visibleHandoffs.map((h) => {
-              const isResolved = isResolvedStatus(h.status);
+              const resolved = isResolvedStatus(h.status);
 
-              // Build card style with hard override:
               const cardStyle: React.CSSProperties = {
                 borderRadius: 12,
                 padding: 12,
@@ -383,7 +436,7 @@ export default function Page() {
                 border: "1px solid rgba(255,255,255,0.10)",
               };
 
-              if (isResolved) {
+              if (resolved) {
                 Object.assign(cardStyle, resolvedCardStyle());
               } else {
                 Object.assign(cardStyle, glowStyleForPriority(h.priority));
@@ -404,6 +457,7 @@ export default function Page() {
                       justifyContent: "space-between",
                       gap: 10,
                       alignItems: "center",
+                      flexWrap: "wrap",
                     }}
                   >
                     <div
@@ -411,8 +465,9 @@ export default function Page() {
                         fontWeight: 900,
                         fontSize: 14,
                         lineHeight: 1.2,
-                        textDecoration: isResolved ? "line-through" : "none",
-                        opacity: isResolved ? 0.85 : 1,
+                        textDecoration: resolved ? "line-through" : "none",
+                        opacity: resolved ? 0.85 : 1,
+                        minWidth: 220,
                       }}
                     >
                       {h.summary}
@@ -423,6 +478,7 @@ export default function Page() {
                         display: "flex",
                         gap: 10,
                         alignItems: "center",
+                        flexWrap: "wrap",
                       }}
                     >
                       <StatusPill status={h.status} />
@@ -459,6 +515,11 @@ export default function Page() {
                     {h.location_code && (
                       <span>
                         Location: <b>{h.location_code}</b>
+                      </span>
+                    )}
+                    {h.status && h.status.toLowerCase() === "needs_followup" && (
+                      <span>
+                        Flag: <b>Needs follow-up</b>
                       </span>
                     )}
                   </div>
