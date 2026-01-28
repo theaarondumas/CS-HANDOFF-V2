@@ -18,12 +18,15 @@ type HandoffRow = {
 /**
  * ✅ Canonical cs_status enum values (confirmed):
  * open | needs_followup | resolved
- *
- * Single source of truth: what counts as RESOLVED in UI
  */
+function normStatus(status?: string | null) {
+  return (status || "open").trim().toLowerCase();
+}
 function isResolvedStatus(status?: string | null) {
-  const s = (status || "open").trim().toLowerCase();
-  return s === "resolved";
+  return normStatus(status) === "resolved";
+}
+function isFollowupStatus(status?: string | null) {
+  return normStatus(status) === "needs_followup";
 }
 
 /** Soft glow by priority (low/medium/high) — OPEN only */
@@ -48,36 +51,73 @@ function glowStyleForPriority(priority?: string) {
   };
 }
 
-/** RESOLVED style — hard “dead” look */
+/** Resolved style — dim but still readable */
 function resolvedCardStyle(): React.CSSProperties {
   return {
-    opacity: 0.35,
-    filter: "grayscale(1) saturate(0.2)",
-    background: "rgba(0,0,0,0.55)",
-    border: "1px solid rgba(255,255,255,0.08)",
+    opacity: 0.62,
+    filter: "grayscale(0.8) saturate(0.35)",
+    background: "rgba(0,0,0,0.45)",
+    border: "1px solid rgba(255,255,255,0.09)",
     boxShadow: "none",
   };
 }
 
-/** Tiny status pill */
+function priorityDot(priority?: string) {
+  const p = (priority || "").toLowerCase();
+  const base: React.CSSProperties = {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.22)",
+    opacity: 0.95,
+  };
+  if (p === "high") return { ...base, background: "rgba(255,80,80,0.9)" };
+  if (p === "medium") return { ...base, background: "rgba(255,190,60,0.9)" };
+  return { ...base, background: "rgba(80,255,160,0.85)" };
+}
+
+/** Status pill (OPEN / FOLLOW-UP / RESOLVED) */
 function StatusPill({ status }: { status?: string | null }) {
-  const s = (status || "open").trim().toLowerCase();
+  const s = normStatus(status);
   const resolved = s === "resolved";
   const followup = s === "needs_followup";
+
+  const border = resolved
+    ? "rgba(255,255,255,0.16)"
+    : followup
+    ? "rgba(255,190,60,0.35)"
+    : "rgba(255,255,255,0.18)";
+
+  const bg = resolved
+    ? "rgba(255,255,255,0.06)"
+    : followup
+    ? "rgba(255,190,60,0.10)"
+    : "rgba(255,255,255,0.06)";
+
   return (
     <span
       style={{
         fontSize: 11,
-        padding: "3px 8px",
+        padding: "4px 9px",
         borderRadius: 999,
-        border: "1px solid rgba(255,255,255,0.18)",
-        opacity: 0.9,
-        fontWeight: 800,
+        border: `1px solid ${border}`,
+        background: bg,
+        opacity: 0.95,
+        fontWeight: 900,
+        letterSpacing: 0.2,
       }}
     >
       {resolved ? "RESOLVED" : followup ? "FOLLOW-UP" : "OPEN"}
     </span>
   );
+}
+
+function fmtTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }
 
 export default function Page() {
@@ -94,8 +134,6 @@ export default function Page() {
   // Detail nav is live
   const ENABLE_DETAIL_NAV = true;
 
-  // Hide resolved by default; show when toggled
-  // ALSO: enforce consistent sorting (unresolved first, newest first within groups)
   const visibleHandoffs = useMemo(() => {
     const sorted = [...handoffs].sort((a, b) => {
       const ar = isResolvedStatus(a.status);
@@ -114,7 +152,14 @@ export default function Page() {
     return sorted.filter((h) => !isResolvedStatus(h.status));
   }, [handoffs, showResolved]);
 
-  const hasData = visibleHandoffs.length > 0;
+  const openCount = useMemo(
+    () => handoffs.filter((h) => !isResolvedStatus(h.status)).length,
+    [handoffs]
+  );
+  const resolvedCount = useMemo(
+    () => handoffs.filter((h) => isResolvedStatus(h.status)).length,
+    [handoffs]
+  );
 
   async function loadSessionAndFeed() {
     setErrorMsg(null);
@@ -171,7 +216,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh on focus/visibility (fix “back to feed doesn’t update”)
+  // Refresh on focus/visibility
   useEffect(() => {
     const onFocus = () => loadSessionAndFeed();
     const onVis = () => {
@@ -228,6 +273,20 @@ export default function Page() {
     router.push(`/handoff/${id}`);
   }
 
+  const hasVisible = visibleHandoffs.length > 0;
+
+  // --- Styles (inline, no Tailwind dependency) ---
+  const btnBase: React.CSSProperties = {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #333",
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+    opacity: 0.9,
+    fontWeight: 750,
+  };
+
   return (
     <main
       style={{
@@ -237,8 +296,11 @@ export default function Page() {
         maxWidth: 980,
         margin: "0 auto",
         overflowX: "hidden",
+        // space for mobile sticky bar
+        paddingBottom: 110,
       }}
     >
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -251,12 +313,11 @@ export default function Page() {
         <div style={{ minWidth: 260 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>CS HANDOFF — Feed</h1>
 
-          {/* Debug watermark (remove later) */}
           <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
-            FEED_BUILD: RESOLVED_UI_V4_AUTH_BUTTON
+            FEED_BUILD: MOBILE_BAR_V1_CARDS_V1
           </div>
 
-          <p style={{ opacity: 0.75, marginTop: 8, marginBottom: 0 }}>
+          <p style={{ opacity: 0.78, marginTop: 8, marginBottom: 0 }}>
             {sessionEmail ? (
               <>
                 ✅ Logged in as <b>{sessionEmail}</b>
@@ -265,9 +326,35 @@ export default function Page() {
               <>Sign in to view and create handoffs.</>
             )}
           </p>
+
+          <div style={{ marginTop: 8, opacity: 0.7, fontSize: 12 }}>
+            Open: <b>{openCount}</b> · Resolved: <b>{resolvedCount}</b>
+          </div>
+
+          {userId && (
+            <button
+              onClick={signOut}
+              style={{
+                marginTop: 10,
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "transparent",
+                color: "#fff",
+                cursor: "pointer",
+                opacity: 0.75,
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              Sign out
+            </button>
+          )}
         </div>
 
+        {/* Desktop button row (kept as-is for md+) */}
         <div
+          className="cs-desktop-actions"
           style={{
             display: "flex",
             gap: 10,
@@ -275,37 +362,16 @@ export default function Page() {
             justifyContent: "flex-end",
           }}
         >
-          {/* ✅ NEW: Sign-in button when logged out */}
           {!userId && (
-            <button
-              onClick={() => router.push("/auth")}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                background: "transparent",
-                color: "#fff",
-                cursor: "pointer",
-                opacity: 0.95,
-                fontWeight: 800,
-              }}
-            >
+            <button onClick={() => router.push("/auth")} style={btnBase}>
               Sign In
             </button>
           )}
 
           <button
             onClick={() => setShowResolved((v) => !v)}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#fff",
-              cursor: "pointer",
-              opacity: 0.9,
-              fontWeight: 700,
-            }}
+            style={btnBase}
+            title="Toggle resolved visibility"
           >
             {showResolved ? "Hide Resolved" : "Show Resolved"}
           </button>
@@ -314,14 +380,10 @@ export default function Page() {
             onClick={() => router.push("/create")}
             disabled={!userId}
             style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#fff",
+              ...btnBase,
               cursor: userId ? "pointer" : "not-allowed",
-              opacity: userId ? 0.9 : 0.5,
-              fontWeight: 700,
+              opacity: userId ? 0.92 : 0.5,
+              fontWeight: 850,
             }}
           >
             + Create Handoff
@@ -329,37 +391,30 @@ export default function Page() {
 
           <button
             onClick={loadSessionAndFeed}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 10,
-              border: "1px solid #333",
-              background: "transparent",
-              color: "#fff",
-              cursor: "pointer",
-              opacity: 0.85,
-            }}
+            style={{ ...btnBase, opacity: 0.85, fontWeight: 700 }}
           >
             Refresh
           </button>
-
-          {userId && (
-            <button
-              onClick={signOut}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                background: "transparent",
-                color: "#fff",
-                cursor: "pointer",
-                opacity: 0.75,
-              }}
-            >
-              Sign out
-            </button>
-          )}
         </div>
       </div>
+
+      {/* Desktop-only hide for mobile actions row (CSS in-page) */}
+      <style>{`
+        /* Desktop actions show >= 768px; hide on mobile */
+        @media (max-width: 767px) {
+          .cs-desktop-actions { display: none !important; }
+        }
+        /* Mobile sticky bar hidden on desktop */
+        @media (min-width: 768px) {
+          .cs-mobile-bar { display: none !important; }
+        }
+        /* Subtle pulse for follow-up */
+        @keyframes csPulse {
+          0% { box-shadow: 0 0 0 rgba(255,190,60,0.0); }
+          50% { box-shadow: 0 0 16px rgba(255,190,60,0.18); }
+          100% { box-shadow: 0 0 0 rgba(255,190,60,0.0); }
+        }
+      `}</style>
 
       {errorMsg && (
         <div
@@ -374,9 +429,25 @@ export default function Page() {
         </div>
       )}
 
+      {/* Content */}
       <div style={{ marginTop: 18 }}>
         {loading ? (
-          <p style={{ opacity: 0.75 }}>Loading handoffs…</p>
+          <div style={{ opacity: 0.75 }}>
+            <p style={{ margin: 0 }}>Loading handoffs…</p>
+            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    height: 78,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(255,255,255,0.04)",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         ) : !userId ? (
           <div
             style={{
@@ -387,147 +458,278 @@ export default function Page() {
             }}
           >
             <p style={{ margin: 0, opacity: 0.85 }}>
-              You’re not signed in. Use the <b>Sign In</b> button above to get a
-              magic link.
+              You’re not signed in. Tap <b>Sign In</b> to get a magic link.
             </p>
 
             <button
               onClick={() => router.push("/auth")}
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                background: "transparent",
-                color: "#fff",
-                cursor: "pointer",
-                opacity: 0.95,
-                fontWeight: 800,
-              }}
+              style={{ ...btnBase, marginTop: 12, fontWeight: 900 }}
             >
               Go to Sign In
             </button>
           </div>
-        ) : !hasData ? (
+        ) : !hasVisible ? (
           <div
             style={{
-              border: "1px solid #333",
-              padding: 14,
-              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              padding: 16,
+              borderRadius: 14,
               marginTop: 12,
+              background: "rgba(255,255,255,0.03)",
             }}
           >
-            <p style={{ margin: 0, opacity: 0.85 }}>
-              No handoffs to show.{" "}
+            <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 6 }}>
+              All clear.
+            </div>
+            <div style={{ opacity: 0.82, fontSize: 13 }}>
               {showResolved
-                ? "Create one."
-                : "Try “Show Resolved” or create a new handoff."}
-            </p>
+                ? "No handoffs yet. Create the first one."
+                : "No open handoffs right now. You can create one, or show resolved."}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <button
+                onClick={() => router.push("/create")}
+                style={{
+                  ...btnBase,
+                  fontWeight: 900,
+                  opacity: 0.95,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                }}
+              >
+                + Create Handoff
+              </button>
+              <button
+                onClick={() => setShowResolved(true)}
+                style={{ ...btnBase, opacity: 0.85 }}
+              >
+                Show Resolved
+              </button>
+            </div>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-            {visibleHandoffs.map((h) => {
-              const resolved = isResolvedStatus(h.status);
+          <>
+            {/* Low-activity hint (1 open) */}
+            {openCount === 1 && !showResolved && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.03)",
+                  opacity: 0.9,
+                  fontSize: 13,
+                }}
+              >
+                No other open handoffs right now.
+              </div>
+            )}
 
-              const cardStyle: React.CSSProperties = {
-                borderRadius: 12,
-                padding: 12,
-                cursor: ENABLE_DETAIL_NAV ? "pointer" : "default",
-                border: "1px solid rgba(255,255,255,0.10)",
-              };
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              {visibleHandoffs.map((h) => {
+                const resolved = isResolvedStatus(h.status);
+                const followup = isFollowupStatus(h.status);
 
-              if (resolved) {
-                Object.assign(cardStyle, resolvedCardStyle());
-              } else {
-                Object.assign(cardStyle, glowStyleForPriority(h.priority));
-                cardStyle.opacity = 0.95;
-              }
+                const ts = h.last_update_at ?? h.created_at;
 
-              return (
-                <div
-                  key={h.id}
-                  onClick={() => onRowClick(h.id)}
-                  role={ENABLE_DETAIL_NAV ? "button" : undefined}
-                  tabIndex={ENABLE_DETAIL_NAV ? 0 : -1}
-                  style={cardStyle}
-                >
+                const cardStyle: React.CSSProperties = {
+                  borderRadius: 14,
+                  padding: 12,
+                  cursor: ENABLE_DETAIL_NAV ? "pointer" : "default",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.02)",
+                };
+
+                if (resolved) {
+                  Object.assign(cardStyle, resolvedCardStyle());
+                } else {
+                  Object.assign(cardStyle, glowStyleForPriority(h.priority));
+                  cardStyle.opacity = 0.96;
+                }
+
+                // Follow-up gets a subtle pulse ring (only when not resolved)
+                if (followup && !resolved) {
+                  cardStyle.animation = "csPulse 2.2s ease-in-out infinite";
+                }
+
+                return (
                   <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                    }}
+                    key={h.id}
+                    onClick={() => onRowClick(h.id)}
+                    role={ENABLE_DETAIL_NAV ? "button" : undefined}
+                    tabIndex={ENABLE_DETAIL_NAV ? 0 : -1}
+                    style={cardStyle}
                   >
+                    {/* Top row: Location + Priority dot */}
                     <div
                       style={{
-                        fontWeight: 900,
-                        fontSize: 14,
-                        lineHeight: 1.2,
-                        textDecoration: resolved ? "line-through" : "none",
-                        opacity: resolved ? 0.85 : 1,
-                        minWidth: 220,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          minWidth: 0,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            letterSpacing: 0.4,
+                            opacity: 0.9,
+                            padding: "3px 8px",
+                            borderRadius: 999,
+                            border: "1px solid rgba(255,255,255,0.14)",
+                            background: "rgba(255,255,255,0.04)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {h.location_code ? h.location_code : "—"}
+                        </span>
+
+                        <span style={{ opacity: 0.65, fontSize: 12 }}>
+                          {h.category}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={priorityDot(h.priority)} />
+                      </div>
+                    </div>
+
+                    {/* Summary */}
+                    <div
+                      style={{
+                        fontWeight: 950,
+                        fontSize: 15,
+                        lineHeight: 1.25,
+                        opacity: resolved ? 0.9 : 1,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
                       }}
                     >
                       {h.summary}
                     </div>
 
+                    {/* Bottom row */}
                     <div
                       style={{
                         display: "flex",
+                        justifyContent: "space-between",
                         gap: 10,
                         alignItems: "center",
+                        marginTop: 10,
                         flexWrap: "wrap",
                       }}
                     >
-                      <StatusPill status={h.status} />
-                      <div
-                        style={{
-                          opacity: 0.7,
-                          fontSize: 12,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {new Date(
-                          h.last_update_at ?? h.created_at
-                        ).toLocaleString()}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <StatusPill status={h.status} />
+                        {followup && !resolved && (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              border: "1px solid rgba(255,190,60,0.28)",
+                              background: "rgba(255,190,60,0.08)",
+                              fontWeight: 900,
+                              opacity: 0.95,
+                            }}
+                          >
+                            Needs follow-up
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ opacity: 0.68, fontSize: 12, whiteSpace: "nowrap" }}>
+                        {fmtTime(ts)}
                       </div>
                     </div>
-                  </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      marginTop: 8,
-                      opacity: 0.85,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span>
-                      Category: <b>{h.category}</b>
-                    </span>
-                    <span>
+                    {/* Meta line */}
+                    <div style={{ marginTop: 8, opacity: 0.78, fontSize: 12 }}>
                       Priority: <b>{h.priority}</b>
-                    </span>
-                    {h.location_code && (
-                      <span>
-                        Location: <b>{h.location_code}</b>
-                      </span>
-                    )}
-                    {h.status && h.status.toLowerCase() === "needs_followup" && (
-                      <span>
-                        Flag: <b>Needs follow-up</b>
-                      </span>
-                    )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </>
         )}
+      </div>
+
+      {/* Mobile sticky bottom action bar */}
+      <div
+        className="cs-mobile-bar"
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          padding: "10px 12px",
+          paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+          background: "rgba(0,0,0,0.82)",
+          backdropFilter: "blur(10px)",
+          borderTop: "1px solid rgba(255,255,255,0.10)",
+          zIndex: 9999,
+        }}
+      >
+        <div style={{ maxWidth: 980, margin: "0 auto" }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => router.push(userId ? "/create" : "/auth")}
+              style={{
+                ...btnBase,
+                flex: 1,
+                fontWeight: 950,
+                opacity: userId ? 0.96 : 0.9,
+                border: "1px solid rgba(255,255,255,0.18)",
+              }}
+            >
+              {userId ? "+ Create" : "Sign In"}
+            </button>
+
+            <button
+              onClick={loadSessionAndFeed}
+              style={{ ...btnBase, width: 110, opacity: 0.85, fontWeight: 800 }}
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between" }}>
+            <button
+              onClick={() => setShowResolved((v) => !v)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "rgba(255,255,255,0.04)",
+                color: "#fff",
+                cursor: "pointer",
+                opacity: 0.92,
+                fontSize: 12,
+                fontWeight: 850,
+              }}
+            >
+              {showResolved ? "Hide Resolved" : "Show Resolved"}
+            </button>
+
+            <div style={{ opacity: 0.7, fontSize: 12 }}>
+              Open: <b>{openCount}</b>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );
