@@ -13,6 +13,9 @@ type HandoffRow = {
   location_code: string | null;
   status: string | null;
   last_update_at?: string | null;
+
+  // ✅ NEW: fast feed attribution (set by update/resolve flow)
+  last_update_by_snapshot?: string | null;
 };
 
 /**
@@ -178,16 +181,40 @@ export default function Page() {
     setSessionEmail(email);
     setUserId(uid);
 
+    // Not signed in
     if (!uid) {
       setHandoffs([]);
       setLoading(false);
       return;
     }
 
+    // ✅ NEW: onboarding gate — must have initials + shift
+    const { data: prof, error: profErr } = await supabase
+      .from("profiles")
+      .select("display_name, shift")
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (profErr) {
+      setErrorMsg(profErr.message);
+      setLoading(false);
+      return;
+    }
+
+    const dn = (prof?.display_name || "").trim();
+    const sh = (prof?.shift || "").trim();
+
+    if (!dn || !sh) {
+      setLoading(false);
+      router.push("/onboarding");
+      return;
+    }
+
+    // ✅ Feed fetch includes last_update_by_snapshot
     const { data, error } = await supabase
       .from("handoffs")
       .select(
-        "id, created_at, summary, category, priority, location_code, status, last_update_at"
+        "id, created_at, summary, category, priority, location_code, status, last_update_at, last_update_by_snapshot"
       )
       .order("last_update_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false });
@@ -314,7 +341,7 @@ export default function Page() {
           <h1 style={{ margin: 0, fontSize: 28 }}>CS HANDOFF — Feed</h1>
 
           <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
-            FEED_BUILD: MOBILE_BAR_V1_CARDS_V1
+            FEED_BUILD: MOBILE_BAR_V1_CARDS_V1 + ONBOARDING_GATE
           </div>
 
           <p style={{ opacity: 0.78, marginTop: 8, marginBottom: 0 }}>
@@ -487,7 +514,14 @@ export default function Page() {
                 : "No open handoffs right now. You can create one, or show resolved."}
             </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 12,
+              }}
+            >
               <button
                 onClick={() => router.push("/create")}
                 style={{
@@ -530,7 +564,6 @@ export default function Page() {
               {visibleHandoffs.map((h) => {
                 const resolved = isResolvedStatus(h.status);
                 const followup = isFollowupStatus(h.status);
-
                 const ts = h.last_update_at ?? h.created_at;
 
                 const cardStyle: React.CSSProperties = {
@@ -548,7 +581,6 @@ export default function Page() {
                   cardStyle.opacity = 0.96;
                 }
 
-                // Follow-up gets a subtle pulse ring (only when not resolved)
                 if (followup && !resolved) {
                   cardStyle.animation = "csPulse 2.2s ease-in-out infinite";
                 }
@@ -600,7 +632,9 @@ export default function Page() {
                         </span>
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div
+                        style={{ display: "flex", alignItems: "center", gap: 8 }}
+                      >
                         <div style={priorityDot(h.priority)} />
                       </div>
                     </div>
@@ -632,7 +666,13 @@ export default function Page() {
                         flexWrap: "wrap",
                       }}
                     >
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <StatusPill status={h.status} />
                         {followup && !resolved && (
                           <span
@@ -651,14 +691,30 @@ export default function Page() {
                         )}
                       </div>
 
-                      <div style={{ opacity: 0.68, fontSize: 12, whiteSpace: "nowrap" }}>
+                      <div
+                        style={{
+                          opacity: 0.68,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {fmtTime(ts)}
                       </div>
                     </div>
 
-                    {/* Meta line */}
-                    <div style={{ marginTop: 8, opacity: 0.78, fontSize: 12 }}>
-                      Priority: <b>{h.priority}</b>
+                    {/* ✅ NEW: attribution line (layout-safe, 1 line) */}
+                    <div
+                      style={{
+                        marginTop: 8,
+                        opacity: 0.72,
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={h.last_update_by_snapshot ?? ""}
+                    >
+                      Last update: <b>{h.last_update_by_snapshot ?? "—"}</b>
                     </div>
                   </div>
                 );
@@ -701,13 +757,24 @@ export default function Page() {
 
             <button
               onClick={loadSessionAndFeed}
-              style={{ ...btnBase, width: 110, opacity: 0.85, fontWeight: 800 }}
+              style={{
+                ...btnBase,
+                width: 110,
+                opacity: 0.85,
+                fontWeight: 800,
+              }}
             >
               Refresh
             </button>
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between" }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
             <button
               onClick={() => setShowResolved((v) => !v)}
               style={{
