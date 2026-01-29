@@ -88,14 +88,14 @@ function StatusPill({ status }: { status?: string | null }) {
   const border = resolved
     ? "rgba(255,255,255,0.16)"
     : followup
-    ? "rgba(255,190,60,0.35)"
-    : "rgba(255,255,255,0.18)";
+      ? "rgba(255,190,60,0.35)"
+      : "rgba(255,255,255,0.18)";
 
   const bg = resolved
     ? "rgba(255,255,255,0.06)"
     : followup
-    ? "rgba(255,190,60,0.10)"
-    : "rgba(255,255,255,0.06)";
+      ? "rgba(255,190,60,0.10)"
+      : "rgba(255,255,255,0.06)";
 
   return (
     <span
@@ -339,9 +339,17 @@ export default function Page() {
       >
         <div style={{ minWidth: 260 }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>CS HANDOFF — Feed</h1>
+          <div
+            className="flex items-baseline justify-between gap-4"
+            style={{ marginTop: 6 }}
+          >
+            <h1 className="text-xl font-semibold">
+              CS HANDOFF — Feed
+            </h1>
 
-          <div style={{ opacity: 0.6, fontSize: 12, marginTop: 6 }}>
-            FEED_BUILD: MOBILE_BAR_V1_CARDS_V1 + ONBOARDING_GATE
+            <div className="text-xs opacity-70 whitespace-nowrap">
+              FEED_BUILD: MOBILE_BAR_V1,CARDS_V1 + ONBOARDING_GATE
+            </div>
           </div>
 
           <p style={{ opacity: 0.78, marginTop: 8, marginBottom: 0 }}>
