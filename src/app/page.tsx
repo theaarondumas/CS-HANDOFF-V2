@@ -13,11 +13,13 @@ type HandoffRow = {
   location_code: string | null;
   status: string | null;
   last_update_at?: string | null;
+
+  // ✅ fast feed attribution (set by update/resolve flow)
   last_update_by_snapshot?: string | null;
 };
 
 /**
- * ✅ Canonical cs_status enum values (confirmed):
+ * ✅ Canonical cs_status enum values:
  * open | needs_followup | resolved
  */
 function normStatus(status?: string | null) {
@@ -186,7 +188,7 @@ export default function Page() {
       return;
     }
 
-    // ✅ Onboarding gate — must have display_name + shift
+    // ✅ onboarding gate — must have display_name + shift
     const { data: prof, error: profErr } = await supabase
       .from("profiles")
       .select("display_name, shift")
@@ -208,7 +210,7 @@ export default function Page() {
       return;
     }
 
-    // Feed fetch includes last_update_by_snapshot
+    // ✅ Feed fetch includes last_update_by_snapshot
     const { data, error } = await supabase
       .from("handoffs")
       .select(
@@ -300,7 +302,7 @@ export default function Page() {
 
   const hasVisible = visibleHandoffs.length > 0;
 
-  // --- Styles ---
+  // --- Styles (inline) ---
   const btnBase: React.CSSProperties = {
     padding: "10px 14px",
     borderRadius: 10,
@@ -325,7 +327,7 @@ export default function Page() {
         paddingBottom: 110,
       }}
     >
-      {/* ✅ SINGLE HEADER (no duplicates) */}
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -336,17 +338,25 @@ export default function Page() {
         }}
       >
         <div style={{ minWidth: 260 }}>
-          {/* Title left + build tag right */}
+          {/* ✅ Mobile-friendly header row (prevents squish) */}
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 12,
+              gap: 10,
               marginTop: 6,
             }}
           >
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 26,
+                fontWeight: 900,
+                flex: "1 1 240px",
+                minWidth: 240,
+              }}
+            >
               CS HANDOFF — Feed
             </h1>
 
@@ -354,7 +364,11 @@ export default function Page() {
               style={{
                 fontSize: 12,
                 opacity: 0.7,
-                whiteSpace: "nowrap",
+                flex: "1 1 220px",
+                minWidth: 220,
+                textAlign: "right",
+                whiteSpace: "normal",
+                lineHeight: 1.2,
               }}
             >
               FEED_BUILD: MOBILE_BAR_V1,CARDS_V1 + ONBOARDING_GATE
@@ -396,7 +410,7 @@ export default function Page() {
           )}
         </div>
 
-        {/* Desktop action row */}
+        {/* Desktop button row (hidden on mobile via CSS below) */}
         <div
           className="cs-desktop-actions"
           style={{
@@ -442,14 +456,17 @@ export default function Page() {
         </div>
       </div>
 
-      {/* CSS: hide desktop actions on mobile; show mobile bar only on mobile */}
+      {/* CSS in-page */}
       <style>{`
+        /* Desktop actions show >= 768px; hide on mobile */
         @media (max-width: 767px) {
           .cs-desktop-actions { display: none !important; }
         }
+        /* Mobile sticky bar hidden on desktop */
         @media (min-width: 768px) {
           .cs-mobile-bar { display: none !important; }
         }
+        /* Subtle pulse for follow-up */
         @keyframes csPulse {
           0% { box-shadow: 0 0 0 rgba(255,190,60,0.0); }
           50% { box-shadow: 0 0 16px rgba(255,190,60,0.18); }
@@ -509,7 +526,7 @@ export default function Page() {
               Go to Sign In
             </button>
           </div>
-        ) : !hasVisible ? (
+        ) : visibleHandoffs.length === 0 ? (
           <div
             style={{
               border: "1px solid rgba(255,255,255,0.12)",
@@ -557,6 +574,7 @@ export default function Page() {
           </div>
         ) : (
           <>
+            {/* Low-activity hint (1 open) */}
             {openCount === 1 && !showResolved && (
               <div
                 style={{
@@ -606,6 +624,7 @@ export default function Page() {
                     tabIndex={ENABLE_DETAIL_NAV ? 0 : -1}
                     style={cardStyle}
                   >
+                    {/* Top row: Location + Priority dot */}
                     <div
                       style={{
                         display: "flex",
@@ -649,6 +668,7 @@ export default function Page() {
                       </div>
                     </div>
 
+                    {/* Summary */}
                     <div
                       style={{
                         fontWeight: 950,
@@ -664,6 +684,7 @@ export default function Page() {
                       {h.summary}
                     </div>
 
+                    {/* Bottom row */}
                     <div
                       style={{
                         display: "flex",
@@ -698,6 +719,7 @@ export default function Page() {
                       </div>
                     </div>
 
+                    {/* Attribution */}
                     <div
                       style={{
                         marginTop: 8,
