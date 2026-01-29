@@ -13,8 +13,6 @@ type HandoffRow = {
   location_code: string | null;
   status: string | null;
   last_update_at?: string | null;
-
-  // ✅ NEW: fast feed attribution (set by update/resolve flow)
   last_update_by_snapshot?: string | null;
 };
 
@@ -88,14 +86,14 @@ function StatusPill({ status }: { status?: string | null }) {
   const border = resolved
     ? "rgba(255,255,255,0.16)"
     : followup
-      ? "rgba(255,190,60,0.35)"
-      : "rgba(255,255,255,0.18)";
+    ? "rgba(255,190,60,0.35)"
+    : "rgba(255,255,255,0.18)";
 
   const bg = resolved
     ? "rgba(255,255,255,0.06)"
     : followup
-      ? "rgba(255,190,60,0.10)"
-      : "rgba(255,255,255,0.06)";
+    ? "rgba(255,190,60,0.10)"
+    : "rgba(255,255,255,0.06)";
 
   return (
     <span
@@ -188,7 +186,7 @@ export default function Page() {
       return;
     }
 
-    // ✅ NEW: onboarding gate — must have initials + shift
+    // ✅ Onboarding gate — must have display_name + shift
     const { data: prof, error: profErr } = await supabase
       .from("profiles")
       .select("display_name, shift")
@@ -210,7 +208,7 @@ export default function Page() {
       return;
     }
 
-    // ✅ Feed fetch includes last_update_by_snapshot
+    // Feed fetch includes last_update_by_snapshot
     const { data, error } = await supabase
       .from("handoffs")
       .select(
@@ -302,11 +300,11 @@ export default function Page() {
 
   const hasVisible = visibleHandoffs.length > 0;
 
-  // --- Styles (inline, no Tailwind dependency) ---
+  // --- Styles ---
   const btnBase: React.CSSProperties = {
     padding: "10px 14px",
     borderRadius: 10,
-    border: "1px solid #333",
+    border: "1px solid rgba(255,255,255,0.14)",
     background: "transparent",
     color: "#fff",
     cursor: "pointer",
@@ -327,7 +325,7 @@ export default function Page() {
         paddingBottom: 110,
       }}
     >
-      {/* Header */}
+      {/* ✅ SINGLE HEADER (no duplicates) */}
       <div
         style={{
           display: "flex",
@@ -338,16 +336,27 @@ export default function Page() {
         }}
       >
         <div style={{ minWidth: 260 }}>
-          <h1 style={{ margin: 0, fontSize: 28 }}>CS HANDOFF — Feed</h1>
+          {/* Title left + build tag right */}
           <div
-            className="flex items-baseline justify-between gap-4"
-            style={{ marginTop: 6 }}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              gap: 12,
+              marginTop: 6,
+            }}
           >
-            <h1 className="text-xl font-semibold">
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>
               CS HANDOFF — Feed
             </h1>
 
-            <div className="text-xs opacity-70 whitespace-nowrap">
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.7,
+                whiteSpace: "nowrap",
+              }}
+            >
               FEED_BUILD: MOBILE_BAR_V1,CARDS_V1 + ONBOARDING_GATE
             </div>
           </div>
@@ -387,7 +396,7 @@ export default function Page() {
           )}
         </div>
 
-        {/* Desktop button row (kept as-is for md+) */}
+        {/* Desktop action row */}
         <div
           className="cs-desktop-actions"
           style={{
@@ -433,17 +442,14 @@ export default function Page() {
         </div>
       </div>
 
-      {/* Desktop-only hide for mobile actions row (CSS in-page) */}
+      {/* CSS: hide desktop actions on mobile; show mobile bar only on mobile */}
       <style>{`
-        /* Desktop actions show >= 768px; hide on mobile */
         @media (max-width: 767px) {
           .cs-desktop-actions { display: none !important; }
         }
-        /* Mobile sticky bar hidden on desktop */
         @media (min-width: 768px) {
           .cs-mobile-bar { display: none !important; }
         }
-        /* Subtle pulse for follow-up */
         @keyframes csPulse {
           0% { box-shadow: 0 0 0 rgba(255,190,60,0.0); }
           50% { box-shadow: 0 0 16px rgba(255,190,60,0.18); }
@@ -486,7 +492,7 @@ export default function Page() {
         ) : !userId ? (
           <div
             style={{
-              border: "1px solid #333",
+              border: "1px solid rgba(255,255,255,0.14)",
               padding: 14,
               borderRadius: 12,
               marginTop: 12,
@@ -551,7 +557,6 @@ export default function Page() {
           </div>
         ) : (
           <>
-            {/* Low-activity hint (1 open) */}
             {openCount === 1 && !showResolved && (
               <div
                 style={{
@@ -601,7 +606,6 @@ export default function Page() {
                     tabIndex={ENABLE_DETAIL_NAV ? 0 : -1}
                     style={cardStyle}
                   >
-                    {/* Top row: Location + Priority dot */}
                     <div
                       style={{
                         display: "flex",
@@ -640,14 +644,11 @@ export default function Page() {
                         </span>
                       </div>
 
-                      <div
-                        style={{ display: "flex", alignItems: "center", gap: 8 }}
-                      >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={priorityDot(h.priority)} />
                       </div>
                     </div>
 
-                    {/* Summary */}
                     <div
                       style={{
                         fontWeight: 950,
@@ -663,7 +664,6 @@ export default function Page() {
                       {h.summary}
                     </div>
 
-                    {/* Bottom row */}
                     <div
                       style={{
                         display: "flex",
@@ -674,13 +674,7 @@ export default function Page() {
                         flexWrap: "wrap",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <StatusPill status={h.status} />
                         {followup && !resolved && (
                           <span
@@ -699,18 +693,11 @@ export default function Page() {
                         )}
                       </div>
 
-                      <div
-                        style={{
-                          opacity: 0.68,
-                          fontSize: 12,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
+                      <div style={{ opacity: 0.68, fontSize: 12, whiteSpace: "nowrap" }}>
                         {fmtTime(ts)}
                       </div>
                     </div>
 
-                    {/* ✅ NEW: attribution line (layout-safe, 1 line) */}
                     <div
                       style={{
                         marginTop: 8,
