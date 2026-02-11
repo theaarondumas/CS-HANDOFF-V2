@@ -14,9 +14,23 @@ type HandoffRow = {
   status: string | null;
   last_update_at?: string | null;
 
-  // ✅ fast feed attribution (set by update/resolve flow)
+  // fast feed attribution (set by update/resolve flow)
   last_update_by_snapshot?: string | null;
 };
+
+/**
+ * ✅ Providence-only gate
+ * - Only allow @providence.org
+ * - NOTE: best practice is to also enforce in /auth page BEFORE sending OTP,
+ *   but we enforce here too so the feed is protected.
+ */
+const ALLOWED_DOMAIN = "providence.org";
+
+function isAllowedEmail(email?: string | null) {
+  if (!email) return false;
+  const e = email.trim().toLowerCase();
+  return e.endsWith(`@${ALLOWED_DOMAIN}`);
+}
 
 /**
  * ✅ Canonical cs_status enum values:
@@ -164,6 +178,19 @@ export default function Page() {
     [handoffs]
   );
 
+  async function signOutWithMessage(message?: string) {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
+    setSessionEmail(null);
+    setUserId(null);
+    setHandoffs([]);
+    if (message) setErrorMsg(message);
+    router.push("/auth");
+  }
+
   async function loadSessionAndFeed() {
     setErrorMsg(null);
     setLoading(true);
@@ -184,6 +211,15 @@ export default function Page() {
     // Not signed in
     if (!uid) {
       setHandoffs([]);
+      setLoading(false);
+      return;
+    }
+
+    // ✅ Providence-only enforcement
+    if (!isAllowedEmail(email)) {
+      await signOutWithMessage(
+        `Access restricted: please sign in with your @${ALLOWED_DOMAIN} email.`
+      );
       setLoading(false);
       return;
     }
@@ -234,8 +270,20 @@ export default function Page() {
     loadSessionAndFeed();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSessionEmail(session?.user?.email ?? null);
-      setUserId(session?.user?.id ?? null);
+      const email = session?.user?.email ?? null;
+      const uid = session?.user?.id ?? null;
+
+      setSessionEmail(email);
+      setUserId(uid);
+
+      // If someone signs in with non-providence, kick immediately
+      if (uid && !isAllowedEmail(email)) {
+        signOutWithMessage(
+          `Access restricted: please sign in with your @${ALLOWED_DOMAIN} email.`
+        );
+        return;
+      }
+
       loadSessionAndFeed();
     });
 
@@ -260,24 +308,24 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Realtime refresh on inserts/updates
+  // ✅ Realtime refresh on inserts/updates (CLEAN + VALID)
   useEffect(() => {
     const ch = supabase
       .channel("feed")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "handoffs" },
-        loadSessionAndFeed
+        () => loadSessionAndFeed()
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "handoffs" },
-        loadSessionAndFeed
+        () => loadSessionAndFeed()
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "handoff_updates" },
-        loadSessionAndFeed
+        () => loadSessionAndFeed()
       )
       .subscribe();
 
@@ -287,20 +335,10 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    setSessionEmail(null);
-    setUserId(null);
-    setHandoffs([]);
-    router.push("/auth");
-  }
-
   function onRowClick(id: string) {
     if (!ENABLE_DETAIL_NAV) return;
     router.push(`/handoff/${id}`);
   }
-
-  const hasVisible = visibleHandoffs.length > 0;
 
   // --- Styles (inline) ---
   const btnBase: React.CSSProperties = {
@@ -313,6 +351,8 @@ export default function Page() {
     opacity: 0.9,
     fontWeight: 750,
   };
+
+  const notAllowed = !!(userId && !isAllowedEmail(sessionEmail));
 
   return (
     <main
@@ -385,13 +425,18 @@ export default function Page() {
             )}
           </p>
 
+          {/* Providence hint */}
+          <div style={{ marginTop: 6, opacity: 0.65, fontSize: 12 }}>
+            Access: <b>@{ALLOWED_DOMAIN}</b> only
+          </div>
+
           <div style={{ marginTop: 8, opacity: 0.7, fontSize: 12 }}>
             Open: <b>{openCount}</b> · Resolved: <b>{resolvedCount}</b>
           </div>
 
           {userId && (
             <button
-              onClick={signOut}
+              onClick={() => signOutWithMessage(undefined)}
               style={{
                 marginTop: 10,
                 padding: "8px 10px",
@@ -436,11 +481,11 @@ export default function Page() {
 
           <button
             onClick={() => router.push("/create")}
-            disabled={!userId}
+            disabled={!userId || notAllowed}
             style={{
               ...btnBase,
-              cursor: userId ? "pointer" : "not-allowed",
-              opacity: userId ? 0.92 : 0.5,
+              cursor: userId && !notAllowed ? "pointer" : "not-allowed",
+              opacity: userId && !notAllowed ? 0.92 : 0.5,
               fontWeight: 850,
             }}
           >
@@ -481,9 +526,38 @@ export default function Page() {
             padding: 12,
             borderRadius: 12,
             border: "1px solid tomato",
+            background: "rgba(255, 99, 71, 0.06)",
           }}
         >
           <b style={{ color: "tomato" }}>Error:</b> {errorMsg}
+        </div>
+      )}
+
+      {/* If somehow logged in with wrong domain, show a hard block */}
+      {notAllowed && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            borderRadius: 12,
+            border: "1px solid rgba(255,190,60,0.35)",
+            background: "rgba(255,190,60,0.08)",
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>
+            Providence email required
+          </div>
+          <div style={{ opacity: 0.9, fontSize: 13 }}>
+            Please sign in using your <b>@{ALLOWED_DOMAIN}</b> address.
+          </div>
+          <button
+            onClick={() =>
+              signOutWithMessage(`Sign in with your @${ALLOWED_DOMAIN} email.`)
+            }
+            style={{ ...btnBase, marginTop: 12, fontWeight: 900 }}
+          >
+            Sign out
+          </button>
         </div>
       )}
 
@@ -519,12 +593,30 @@ export default function Page() {
               You’re not signed in. Tap <b>Sign In</b> to get a magic link.
             </p>
 
+            <div style={{ marginTop: 8, opacity: 0.7, fontSize: 12 }}>
+              Note: only <b>@{ALLOWED_DOMAIN}</b> emails are allowed.
+            </div>
+
             <button
               onClick={() => router.push("/auth")}
               style={{ ...btnBase, marginTop: 12, fontWeight: 900 }}
             >
               Go to Sign In
             </button>
+          </div>
+        ) : notAllowed ? (
+          <div
+            style={{
+              border: "1px solid rgba(255,190,60,0.35)",
+              padding: 14,
+              borderRadius: 12,
+              marginTop: 12,
+              background: "rgba(255,190,60,0.08)",
+            }}
+          >
+            <p style={{ margin: 0, opacity: 0.95 }}>
+              Access restricted. Please use your <b>@{ALLOWED_DOMAIN}</b> email.
+            </p>
           </div>
         ) : visibleHandoffs.length === 0 ? (
           <div
@@ -663,7 +755,13 @@ export default function Page() {
                         </span>
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
                         <div style={priorityDot(h.priority)} />
                       </div>
                     </div>
@@ -695,7 +793,13 @@ export default function Page() {
                         flexWrap: "wrap",
                       }}
                     >
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
                         <StatusPill status={h.status} />
                         {followup && !resolved && (
                           <span
@@ -714,7 +818,13 @@ export default function Page() {
                         )}
                       </div>
 
-                      <div style={{ opacity: 0.68, fontSize: 12, whiteSpace: "nowrap" }}>
+                      <div
+                        style={{
+                          opacity: 0.68,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {fmtTime(ts)}
                       </div>
                     </div>
@@ -761,12 +871,14 @@ export default function Page() {
           <div style={{ display: "flex", gap: 10 }}>
             <button
               onClick={() => router.push(userId ? "/create" : "/auth")}
+              disabled={!!notAllowed}
               style={{
                 ...btnBase,
                 flex: 1,
                 fontWeight: 950,
-                opacity: userId ? 0.96 : 0.9,
+                opacity: notAllowed ? 0.45 : userId ? 0.96 : 0.9,
                 border: "1px solid rgba(255,255,255,0.18)",
+                cursor: notAllowed ? "not-allowed" : "pointer",
               }}
             >
               {userId ? "+ Create" : "Sign In"}
