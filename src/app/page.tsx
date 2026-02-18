@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import DeliveryControls from "./components/DeliveryControls";
 
 type HandoffRow = {
   id: string;
@@ -843,6 +844,23 @@ export default function Page() {
                     >
                       Last update: <b>{h.last_update_by_snapshot ?? "—"}</b>
                     </div>
+
+                    {/* ✅ Delivery controls on feed card
+                        - Stop propagation so button clicks don't navigate to detail
+                    */}
+                    {!resolved && (
+                      <div
+                        style={{ marginTop: 10 }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                        onPointerDownCapture={(e) => e.stopPropagation()}
+                      >
+                        <DeliveryControls
+                          handoffId={h.id}
+                          status={h.status}
+                          displayName={"Staff"}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

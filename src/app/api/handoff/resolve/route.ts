@@ -1,63 +1,88 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-if (!supabaseUrl) throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-if (!anonKey) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-
-const supabaseService = createClient(supabaseUrl, serviceKey);
-const supabaseAnon = createClient(supabaseUrl, anonKey);
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const auth = req.headers.get("authorization") || "";
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (!m) return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+    const body = await req.json()
+    const { handoffId, nextStatus, displayName } = body
 
-    const accessToken = m[1];
-    const { data: userData, error: userErr } =
-      await supabaseAnon.auth.getUser(accessToken);
+    if (!handoffId || !nextStatus) {
+      return NextResponse.json(
+        { error: "Missing handoffId or nextStatus" },
+        { status: 400 }
+      )
+    }
 
-    if (userErr || !userData?.user)
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    const now = new Date().toISOString()
 
-    const { handoff_id } = await req.json();
-    if (!handoff_id)
-      return NextResponse.json({ error: "handoff_id required" }, { status: 400 });
+    // map timestamps per status
+    const timestampMap: Record<string, string> = {
+      claimed: "claimed_at",
+      picking: "picking_at",
+      enroute: "enroute_at",
+      delivered: "delivered_at",
+      resolved: "resolved_at",
+    }
 
-    // close handoff
-    const { error: updErr } = await supabaseService
+    const updatePayload: any = {
+      status: nextStatus,
+      last_update_at: now,
+      last_update_source: "app",
+      last_update_preview: `Status → ${nextStatus.toUpperCase()}`,
+    }
+
+    if (nextStatus === "claimed") {
+      updatePayload.owner_display_name_snapshot = displayName ?? "Staff"
+    }
+
+    const timestampColumn = timestampMap[nextStatus]
+    if (timestampColumn) {
+      updatePayload[timestampColumn] = now
+    }
+
+    // 1️⃣ update handoff row
+    const { error: updateError } = await supabase
       .from("handoffs")
-      .update({ status: "closed" })
-      .eq("id", handoff_id);
+      .update(updatePayload)
+      .eq("id", handoffId)
 
-    if (updErr) throw updErr;
+    if (updateError) throw updateError
 
-    // audit entry
-    const msg = `SYSTEM: RESOLVED by ${userData.user.email ?? userData.user.id}`;
+    // human readable timeline message
+    const human: Record<string, string> = {
+      claimed: "📦 Claimed",
+      picking: "📦 Picking",
+      enroute: "📦 En route",
+      delivered: "🚚 Delivered",
+      resolved: "😁 Resolved",
+    }
 
-    const { error: insErr } = await supabaseService
+    const msg =
+      human[nextStatus] ?? `Status → ${String(nextStatus).toUpperCase()}`
+
+    // 2️⃣ append audit row (FIXED message requirement)
+    const { error: insertError } = await supabase
       .from("handoff_updates")
       .insert({
-        handoff_id,
-        author_user_id: null,
-        author_display_name_snapshot: "system",
-        source: "system",
+        handoff_id: handoffId,
+        source: "app",
         message: msg,
-      });
+        type: "status_change",
+        to_status: nextStatus,
+        new_status: nextStatus,
+        author_display_name_snapshot: displayName ?? "Staff",
+      })
 
-    if (insErr) throw insErr;
+    if (insertError) throw insertError
 
-    return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    console.error("RESOLVE ERROR:", e);
-    return NextResponse.json(
-      { error: e?.message || "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true })
+  } catch (err: any) {
+    console.error(err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

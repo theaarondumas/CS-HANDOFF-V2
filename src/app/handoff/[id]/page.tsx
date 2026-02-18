@@ -3,10 +3,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import DeliveryControls from "../../components/DeliveryControls";
 
 type Handoff = {
   id: string;
   created_at: string;
+  created_by_display_name_snapshot?: string;
   summary: string;
   category: string;
   priority: string;
@@ -49,8 +51,8 @@ function glowStyleForPriority(priority?: string) {
 }
 
 /**
- * ✅ Canonical CS_STATUS enum values (confirmed):
- * open | needs_followup | resolved
+ * ✅ cs_status now supports Delivery Mode:
+ * open | claimed | picking | enroute | delivered | needs_followup | resolved
  */
 function isResolvedStatus(status?: string | null) {
   const s = (status || "open").trim().toLowerCase();
@@ -71,7 +73,6 @@ export default function HandoffDetailPage() {
   const [newUpdate, setNewUpdate] = useState("");
   const [savingUpdate, setSavingUpdate] = useState(false);
 
-  const [resolving, setResolving] = useState(false);
   const [smsSending, setSmsSending] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -96,7 +97,7 @@ export default function HandoffDetailPage() {
     const { data: h, error: hErr } = await supabase
       .from("handoffs")
       .select(
-        "id, created_at, summary, category, priority, location_code, status, last_update_at"
+        "id, created_at, created_by_display_name_snapshot, summary, category, priority, location_code, status, last_update_at"
       )
       .eq("id", id)
       .single();
@@ -167,57 +168,36 @@ export default function HandoffDetailPage() {
   }
 
   /**
-   * ✅ FIXED FOR REAL:
-   * - Writes enum value "resolved" (NOT "closed")
-   * - Uses `.select()` to detect RLS “0 rows updated” silent-fail
-   * - Updates local state immediately
+   * ✅ Status updates must go through API route now (bypasses RLS safely)
+   * This function is here in case you want an explicit "Resolve" button later.
    */
-  async function markResolved() {
+  async function setStatusViaApi(nextStatus: string) {
     setToast(null);
     setErrorMsg(null);
 
     if (!handoff?.id) return;
 
-    setResolving(true);
     try {
-      const now = new Date().toISOString();
+      const { data: sess } = await supabase.auth.getSession();
+      const displayName = sess.session?.user?.email ?? "Staff";
 
-      const { data, error } = await supabase
-        .from("handoffs")
-        .update({
-          status: "resolved",
-          last_update_at: now,
-        })
-        .eq("id", handoff.id)
-        .select("id, status, last_update_at"); // ✅ forces returned rows
+      const res = await fetch("/api/handoff/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          handoffId: handoff.id,
+          nextStatus,
+          displayName,
+        }),
+      });
 
-      if (error) throw error;
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || "Failed to update status.");
 
-      // ✅ If RLS blocks it, we get [] with no error. Catch it.
-      if (!data || data.length === 0) {
-        throw new Error(
-          "0 rows updated. RLS is blocking UPDATE on handoffs. Fix Supabase policy for UPDATE."
-        );
-      }
-
-      const updated = data[0];
-
-      setHandoff((prev: any) =>
-        prev
-          ? {
-              ...prev,
-              status: updated.status,
-              last_update_at: updated.last_update_at,
-            }
-          : prev
-      );
-
-      setToast("✅ Marked resolved.");
+      setToast(`✅ Status updated → ${nextStatus}`);
       await load();
     } catch (e: any) {
-      setErrorMsg(e?.message ?? "Failed to mark resolved.");
-    } finally {
-      setResolving(false);
+      setErrorMsg(e?.message ?? "Failed to update status.");
     }
   }
 
@@ -328,9 +308,7 @@ export default function HandoffDetailPage() {
               <div style={{ fontWeight: 900, fontSize: 16 }}>
                 {handoff.summary}
               </div>
-              <div
-                style={{ opacity: 0.7, fontSize: 12, whiteSpace: "nowrap" }}
-              >
+              <div style={{ opacity: 0.7, fontSize: 12, whiteSpace: "nowrap" }}>
                 {new Date(
                   handoff.last_update_at ?? handoff.created_at
                 ).toLocaleString()}
@@ -363,6 +341,13 @@ export default function HandoffDetailPage() {
               </span>
             </div>
 
+            {/* ✅ Delivery Mode controls (progress bar + next action button) */}
+            <DeliveryControls
+              handoffId={handoff.id}
+              status={handoff.status}
+              displayName={handoff.created_by_display_name_snapshot ?? null}
+            />
+
             <div
               style={{
                 display: "flex",
@@ -371,27 +356,7 @@ export default function HandoffDetailPage() {
                 flexWrap: "wrap",
               }}
             >
-              <button
-                onClick={markResolved}
-                disabled={resolving || resolvedNow}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid #333",
-                  background: "transparent",
-                  color: "#fff",
-                  cursor: resolving ? "not-allowed" : "pointer",
-                  opacity: resolving || resolvedNow ? 0.5 : 0.9,
-                  fontWeight: 800,
-                }}
-              >
-                {resolvedNow
-                  ? "Resolved ✅"
-                  : resolving
-                  ? "Resolving…"
-                  : "Mark Resolved"}
-              </button>
-
+              {/* Keep SMS alert */}
               <button
                 onClick={sendSms}
                 disabled={smsSending}
@@ -406,6 +371,24 @@ export default function HandoffDetailPage() {
                 }}
               >
                 {smsSending ? "Sending SMS…" : "Send SMS Alert"}
+              </button>
+
+              {/* Optional “hard resolve” fallback (can remove later) */}
+              <button
+                onClick={() => setStatusViaApi("resolved")}
+                disabled={resolvedNow}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #333",
+                  background: "transparent",
+                  color: "#fff",
+                  cursor: resolvedNow ? "not-allowed" : "pointer",
+                  opacity: resolvedNow ? 0.5 : 0.85,
+                  fontWeight: 800,
+                }}
+              >
+                {resolvedNow ? "Resolved ✅" : "Mark Resolved"}
               </button>
             </div>
           </div>
