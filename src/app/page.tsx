@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type HandoffStatus =
@@ -69,10 +69,33 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [liveStatus, setLiveStatus] = useState('CONNECTING')
+  const [notice, setNotice] = useState('')
   const [title, setTitle] = useState('')
   const [updateText, setUpdateText] = useState<Record<string, string>>({})
 
-  async function loadHandoffs() {
+  const boardSignatureRef = useRef('')
+
+  function showNotice(message: string) {
+    setNotice(message)
+
+    window.setTimeout(() => {
+      setNotice('')
+    }, 3500)
+  }
+
+  function getBoardSignature(items: Handoff[]) {
+    return items
+      .map(h => {
+        const updateIds = (h.handoff_updates || [])
+          .map(u => u.id)
+          .join(',')
+
+        return `${h.id}:${h.status}:${updateIds}`
+      })
+      .join('|')
+  }
+
+  async function loadHandoffs(showSmartToast = false) {
     const { data, error } = await supabase
       .from('handoffs')
       .select(`*, handoff_updates (*)`)
@@ -93,12 +116,24 @@ export default function HomePage() {
       ),
     }))
 
+    const newSignature = getBoardSignature(normalized)
+
+    if (
+      showSmartToast &&
+      boardSignatureRef.current &&
+      newSignature !== boardSignatureRef.current
+    ) {
+      showNotice('📡 Board updated')
+    }
+
+    boardSignatureRef.current = newSignature
+
     setHandoffs(normalized)
     setLoading(false)
   }
 
   useEffect(() => {
-    loadHandoffs()
+    loadHandoffs(false)
 
     const channel = supabase
       .channel(`cs-handoff-live-${Date.now()}`)
@@ -111,7 +146,7 @@ export default function HomePage() {
         },
         payload => {
           console.log('LIVE handoffs change:', payload)
-          loadHandoffs()
+          loadHandoffs(true)
         }
       )
       .on(
@@ -123,7 +158,7 @@ export default function HomePage() {
         },
         payload => {
           console.log('LIVE handoff_updates change:', payload)
-          loadHandoffs()
+          loadHandoffs(true)
         }
       )
       .subscribe(status => {
@@ -132,7 +167,7 @@ export default function HomePage() {
       })
 
     const fallbackRefresh = window.setInterval(() => {
-      loadHandoffs()
+      loadHandoffs(true)
     }, 10000)
 
     return () => {
@@ -161,11 +196,13 @@ export default function HomePage() {
       return
     }
 
-    const { error: timelineError } = await supabase.from('handoff_updates').insert({
-      handoff_id: data.id,
-      message: 'Handoff created',
-      source: 'system',
-    })
+    const { error: timelineError } = await supabase
+      .from('handoff_updates')
+      .insert({
+        handoff_id: data.id,
+        message: 'Handoff created',
+        source: 'system',
+      })
 
     if (timelineError) {
       alert(timelineError.message)
@@ -175,7 +212,8 @@ export default function HomePage() {
 
     setTitle('')
     setCreating(false)
-    loadHandoffs()
+    showNotice('🟢 Handoff created')
+    loadHandoffs(false)
   }
 
   async function updateStatus(id: string, status: HandoffStatus) {
@@ -189,18 +227,21 @@ export default function HomePage() {
       return
     }
 
-    const { error: timelineError } = await supabase.from('handoff_updates').insert({
-      handoff_id: id,
-      message: `Status changed to ${statusLabel(status)}`,
-      source: 'system',
-    })
+    const { error: timelineError } = await supabase
+      .from('handoff_updates')
+      .insert({
+        handoff_id: id,
+        message: `Status changed to ${statusLabel(status)}`,
+        source: 'system',
+      })
 
     if (timelineError) {
       alert(timelineError.message)
       return
     }
 
-    loadHandoffs()
+    showNotice(`🔄 ${statusLabel(status)}`)
+    loadHandoffs(false)
   }
 
   async function addUpdate(id: string) {
@@ -219,7 +260,8 @@ export default function HomePage() {
     }
 
     setUpdateText(prev => ({ ...prev, [id]: '' }))
-    loadHandoffs()
+    showNotice('💬 Update added')
+    loadHandoffs(false)
   }
 
   const openHandoffs = handoffs.filter(h => h.status !== 'resolved')
@@ -227,10 +269,18 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-black text-white p-4 pb-24">
+      {notice && (
+        <div className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4">
+          <div className="rounded-xl border border-green-500/40 bg-green-950 px-4 py-3 text-sm text-green-200 shadow-lg">
+            {notice}
+          </div>
+        </div>
+      )}
+
       <section className="max-w-3xl mx-auto space-y-6">
         <header>
           <p className="text-xs text-green-400 tracking-widest">
-            FEED_BUILD: PHASE_1_REALTIME_FALLBACK
+            FEED_BUILD: PHASE_1_TOAST_LOCKED
           </p>
 
           <div className="flex items-center justify-between gap-3">
@@ -374,31 +424,52 @@ function HandoffCard({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => updateStatus('open')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('open')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           🟡 Open
         </button>
 
-        <button onClick={() => updateStatus('needs_followup')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('needs_followup')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           ⚠️ Follow-Up
         </button>
 
-        <button onClick={() => updateStatus('claimed')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('claimed')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           🙋 Claimed
         </button>
 
-        <button onClick={() => updateStatus('picking')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('picking')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           📦 Picking
         </button>
 
-        <button onClick={() => updateStatus('enroute')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('enroute')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           🚚 En Route
         </button>
 
-        <button onClick={() => updateStatus('delivered')} className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm">
+        <button
+          onClick={() => updateStatus('delivered')}
+          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+        >
           ✅ Delivered
         </button>
 
-        <button onClick={() => updateStatus('resolved')} className="col-span-2 rounded-lg bg-white text-black font-bold p-2 text-sm">
+        <button
+          onClick={() => updateStatus('resolved')}
+          className="col-span-2 rounded-lg bg-white text-black font-bold p-2 text-sm"
+        >
           😁 Resolve
         </button>
       </div>
