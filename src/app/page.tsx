@@ -55,7 +55,7 @@ function formatTime(value: string) {
 
 function statusLabel(status: HandoffStatus) {
   if (status === 'open') return '🟡 Open'
-  if (status === 'needs_followup') return '⚠️ Needs Follow-Up'
+  if (status === 'needs_followup') return '🔴 Action Required'
   if (status === 'claimed') return '🙋 Claimed'
   if (status === 'picking') return '📦 Picking'
   if (status === 'enroute') return '🚚 En Route'
@@ -86,10 +86,7 @@ export default function HomePage() {
   function getBoardSignature(items: Handoff[]) {
     return items
       .map(h => {
-        const updateIds = (h.handoff_updates || [])
-          .map(u => u.id)
-          .join(',')
-
+        const updateIds = (h.handoff_updates || []).map(u => u.id).join(',')
         return `${h.id}:${h.status}:${updateIds}`
       })
       .join('|')
@@ -280,7 +277,7 @@ export default function HomePage() {
       <section className="max-w-3xl mx-auto space-y-6">
         <header>
           <p className="text-xs text-green-400 tracking-widest">
-            FEED_BUILD: PHASE_1_TOAST_LOCKED
+            FEED_BUILD: PHASE_1_RE_GLOW_TILES
           </p>
 
           <div className="flex items-center justify-between gap-3">
@@ -296,6 +293,43 @@ export default function HomePage() {
             </div>
           </div>
         </header>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-green-500/50 bg-green-950/20 p-3 text-center shadow-[0_0_18px_rgba(34,197,94,0.15)]">
+            <p className="text-lg font-bold">
+              {
+                handoffs.filter(
+                  h =>
+                    h.status === 'enroute' ||
+                    h.status === 'delivered' ||
+                    h.status === 'resolved'
+                ).length
+              }
+            </p>
+            <p className="text-[10px] text-green-200">READY</p>
+          </div>
+
+          <div className="rounded-xl border border-yellow-400/60 bg-yellow-950/20 p-3 text-center shadow-[0_0_18px_rgba(234,179,8,0.18)]">
+            <p className="text-lg font-bold">
+              {
+                handoffs.filter(
+                  h =>
+                    h.status === 'open' ||
+                    h.status === 'claimed' ||
+                    h.status === 'picking'
+                ).length
+              }
+            </p>
+            <p className="text-[10px] text-yellow-200">NEEDS ATTENTION</p>
+          </div>
+
+          <div className="rounded-xl border border-red-500/70 bg-red-950/30 p-3 text-center shadow-[0_0_20px_rgba(239,68,68,0.22)]">
+            <p className="text-lg font-bold">
+              {handoffs.filter(h => h.status === 'needs_followup').length}
+            </p>
+            <p className="text-[10px] text-red-200">ACTION REQUIRED</p>
+          </div>
+        </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
           <h2 className="font-semibold text-lg">Create Handoff</h2>
@@ -392,16 +426,18 @@ function HandoffCard({
   addUpdate: () => void
   updateStatus: (status: HandoffStatus) => void
 }) {
-  const border =
+  const tileGlow =
     handoff.status === 'needs_followup'
-      ? 'border-yellow-500/70 shadow-[0_0_22px_rgba(234,179,8,0.18)]'
-      : handoff.status === 'delivered'
-      ? 'border-green-500/50'
-      : 'border-zinc-800'
+      ? 'border-red-500/80 bg-red-950/30 shadow-[0_0_30px_rgba(239,68,68,0.28)]'
+      : handoff.status === 'open' ||
+        handoff.status === 'claimed' ||
+        handoff.status === 'picking'
+      ? 'border-yellow-400/70 bg-yellow-950/20 shadow-[0_0_26px_rgba(234,179,8,0.22)]'
+      : 'border-green-500/60 bg-green-950/20 shadow-[0_0_22px_rgba(34,197,94,0.18)]'
 
   return (
     <div
-      className={`rounded-2xl border ${border} bg-zinc-900 p-4 space-y-4 transition ${
+      className={`rounded-2xl border ${tileGlow} p-4 space-y-4 transition-all duration-300 ${
         resolved ? 'opacity-50' : 'opacity-100'
       }`}
     >
@@ -418,7 +454,7 @@ function HandoffCard({
           </p>
         </div>
 
-        <span className="text-xs rounded-full border border-zinc-700 px-3 py-1 h-fit whitespace-nowrap">
+        <span className="text-xs rounded-full border border-zinc-700 bg-black/30 px-3 py-1 h-fit whitespace-nowrap">
           {statusLabel(handoff.status)}
         </span>
       </div>
@@ -426,42 +462,42 @@ function HandoffCard({
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => updateStatus('open')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
           🟡 Open
         </button>
 
         <button
           onClick={() => updateStatus('needs_followup')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
-          ⚠️ Follow-Up
+          🔴 Action Required
         </button>
 
         <button
           onClick={() => updateStatus('claimed')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
           🙋 Claimed
         </button>
 
         <button
           onClick={() => updateStatus('picking')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
           📦 Picking
         </button>
 
         <button
           onClick={() => updateStatus('enroute')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
           🚚 En Route
         </button>
 
         <button
           onClick={() => updateStatus('delivered')}
-          className="rounded-lg bg-zinc-800 hover:bg-zinc-700 p-2 text-sm"
+          className="rounded-lg bg-black/35 hover:bg-black/50 border border-white/10 p-2 text-sm"
         >
           ✅ Delivered
         </button>
@@ -474,7 +510,7 @@ function HandoffCard({
         </button>
       </div>
 
-      <div className="space-y-2 border-t border-zinc-800 pt-3">
+      <div className="space-y-2 border-t border-white/10 pt-3">
         <p className="text-sm font-semibold">Timeline</p>
 
         {(handoff.handoff_updates || []).map(update => (
@@ -490,7 +526,7 @@ function HandoffCard({
       {!resolved && (
         <div className="flex gap-2">
           <input
-            className="flex-1 bg-black border border-zinc-700 rounded-xl p-3 text-sm outline-none focus:border-white"
+            className="flex-1 bg-black/50 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-white"
             placeholder="Add update..."
             value={updateText}
             onChange={e => setUpdateText(e.target.value)}
