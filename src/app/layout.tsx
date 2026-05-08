@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   },
 
   icons: {
-    icon: '/icons/cs-handoff-icon.svg',
-    apple: '/icons/cs-handoff-icon.svg',
+    icon: '/icons/apple-touch-icon.png',
+    apple: '/icons/apple-touch-icon.png',
   },
 }
 

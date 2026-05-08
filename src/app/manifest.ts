@@ -12,9 +12,9 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: 'portrait',
     icons: [
       {
-        src: '/icons/cs-handoff-icon.svg',
-        sizes: 'any',
-        type: 'image/svg+xml',
+        src: '/icons/apple-touch-icon.png',
+        sizes: '512x512',
+        type: 'image/png',
         purpose: 'maskable',
       },
     ],
