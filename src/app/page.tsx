@@ -99,7 +99,7 @@ export default function HomePage() {
       .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Load error:', JSON.stringify(error, null, 2))
+      alert(`Load handoffs failed: ${error.message}`)
       setLoading(false)
       return
     }
@@ -141,8 +141,7 @@ export default function HomePage() {
           schema: 'public',
           table: 'handoffs',
         },
-        payload => {
-          console.log('LIVE handoffs change:', payload)
+        () => {
           loadHandoffs(true)
         }
       )
@@ -153,13 +152,11 @@ export default function HomePage() {
           schema: 'public',
           table: 'handoff_updates',
         },
-        payload => {
-          console.log('LIVE handoff_updates change:', payload)
+        () => {
           loadHandoffs(true)
         }
       )
       .subscribe(status => {
-        console.log('Realtime status:', status)
         setLiveStatus(status)
       })
 
@@ -188,7 +185,7 @@ export default function HomePage() {
       .single()
 
     if (error) {
-      alert(error.message)
+      alert(`Create handoff failed: ${error.message}`)
       setCreating(false)
       return
     }
@@ -202,7 +199,7 @@ export default function HomePage() {
       })
 
     if (timelineError) {
-      alert(timelineError.message)
+      alert(`Timeline insert failed: ${timelineError.message}`)
       setCreating(false)
       return
     }
@@ -220,7 +217,7 @@ export default function HomePage() {
       .eq('id', id)
 
     if (error) {
-      alert(error.message)
+      alert(`Status update failed: ${error.message}`)
       return
     }
 
@@ -233,7 +230,7 @@ export default function HomePage() {
       })
 
     if (timelineError) {
-      alert(timelineError.message)
+      alert(`Timeline update failed: ${timelineError.message}`)
       return
     }
 
@@ -252,7 +249,7 @@ export default function HomePage() {
     })
 
     if (error) {
-      alert(error.message)
+      alert(`Add update failed: ${error.message}`)
       return
     }
 
@@ -277,7 +274,7 @@ export default function HomePage() {
       <section className="max-w-3xl mx-auto space-y-6">
         <header>
           <p className="text-xs text-green-400 tracking-widest">
-            FEED_BUILD: PHASE_1_RE_GLOW_TILES
+            FEED_BUILD: PHASE_1_RE_GLOW_TILES_PWA_SAFE
           </p>
 
           <div className="flex items-center justify-between gap-3">
