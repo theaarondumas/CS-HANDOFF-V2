@@ -16,7 +16,6 @@ type Handoff = {
   id: string
   title: string
   status: HandoffStatus
-  owner_label: string | null
   created_at: string
 }
 
@@ -79,7 +78,7 @@ export default function BoardPage() {
   async function loadHandoffs() {
     const { data, error } = await supabase
       .from('handoffs')
-      .select('id, title, status, owner_label, created_at')
+      .select('id, title, status, created_at')
       .neq('status', 'resolved')
       .order('created_at', { ascending: true })
 
@@ -246,7 +245,7 @@ export default function BoardPage() {
                       </p>
 
                       <div className="mt-3 flex items-center justify-between gap-2 text-xs text-zinc-400">
-                        <span>{item.owner_label || 'Central Supply / Shift'}</span>
+                        <span>Central Supply / Shift</span>
                         <span>{formatTime(item.created_at)}</span>
                       </div>
                     </div>
