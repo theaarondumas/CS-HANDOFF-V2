@@ -65,9 +65,7 @@ const columns: {
 ]
 
 function formatTime(value: string) {
-  const date = new Date(value)
-
-  return date.toLocaleTimeString([], {
+  return new Date(value).toLocaleTimeString([], {
     hour: 'numeric',
     minute: '2-digit',
   })
@@ -76,7 +74,7 @@ function formatTime(value: string) {
 export default function BoardPage() {
   const [handoffs, setHandoffs] = useState<Handoff[]>([])
   const [liveStatus, setLiveStatus] = useState('CONNECTING')
-  const [lastUpdated, setLastUpdated] = useState('')
+  const [lastUpdated, setLastUpdated] = useState('—')
 
   async function loadHandoffs() {
     const { data, error } = await supabase
@@ -86,22 +84,25 @@ export default function BoardPage() {
       .order('created_at', { ascending: true })
 
     if (error) {
-      console.log(error.message)
+      setLiveStatus('LOAD ERROR')
       return
     }
 
     setHandoffs(data || [])
-    setLastUpdated(new Date().toLocaleTimeString([], {
-      hour: 'numeric',
-      minute: '2-digit',
-    }))
+    setLastUpdated(
+      new Date().toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    )
   }
 
   useEffect(() => {
     loadHandoffs()
 
     const channel = supabase
-      .channel(`cs-handoff-board-${Date.now()}`)
+      .channel(`cs-board-live-${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -109,7 +110,9 @@ export default function BoardPage() {
           schema: 'public',
           table: 'handoffs',
         },
-        () => loadHandoffs()
+        () => {
+          loadHandoffs()
+        }
       )
       .on(
         'postgres_changes',
@@ -118,20 +121,32 @@ export default function BoardPage() {
           schema: 'public',
           table: 'handoff_updates',
         },
-        () => loadHandoffs()
+        () => {
+          loadHandoffs()
+        }
       )
-      .subscribe(status => setLiveStatus(status))
+      .subscribe(status => {
+        setLiveStatus(status)
+      })
 
-    const refresh = window.setInterval(loadHandoffs, 10000)
+    const fastRefresh = window.setInterval(() => {
+      loadHandoffs()
+    }, 3000)
 
     return () => {
-      window.clearInterval(refresh)
+      window.clearInterval(fastRefresh)
       supabase.removeChannel(channel)
     }
   }, [])
 
   const activeCount = handoffs.length
   const actionCount = handoffs.filter(h => h.status === 'needs_followup').length
+  const readyCount = handoffs.filter(
+    h => h.status === 'enroute' || h.status === 'delivered'
+  ).length
+  const attentionCount = handoffs.filter(
+    h => h.status === 'open' || h.status === 'claimed' || h.status === 'picking'
+  ).length
 
   return (
     <main className="min-h-screen bg-black text-white p-6">
@@ -157,16 +172,30 @@ export default function BoardPage() {
             </div>
 
             <p className="mt-3 text-sm text-zinc-500">
-              Updated {lastUpdated || '—'}
+              Updated {lastUpdated}
             </p>
           </div>
         </header>
 
-        <section className="grid grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-green-500/50 bg-green-950/20 p-5 shadow-[0_0_18px_rgba(34,197,94,0.15)]">
+        <section className="grid grid-cols-4 gap-4">
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
             <p className="text-4xl font-black">{activeCount}</p>
-            <p className="mt-1 text-sm uppercase tracking-widest text-green-200">
+            <p className="mt-1 text-sm uppercase tracking-widest text-zinc-300">
               Active Handoffs
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-green-500/50 bg-green-950/20 p-5 shadow-[0_0_18px_rgba(34,197,94,0.15)]">
+            <p className="text-4xl font-black">{readyCount}</p>
+            <p className="mt-1 text-sm uppercase tracking-widest text-green-200">
+              Ready / Moving
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-yellow-400/60 bg-yellow-950/20 p-5 shadow-[0_0_18px_rgba(234,179,8,0.18)]">
+            <p className="text-4xl font-black">{attentionCount}</p>
+            <p className="mt-1 text-sm uppercase tracking-widest text-yellow-200">
+              Needs Attention
             </p>
           </div>
 
@@ -174,15 +203,6 @@ export default function BoardPage() {
             <p className="text-4xl font-black">{actionCount}</p>
             <p className="mt-1 text-sm uppercase tracking-widest text-red-200">
               Action Required
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-            <p className="text-4xl font-black">
-              {columns.filter(c => handoffs.some(h => h.status === c.key)).length}
-            </p>
-            <p className="mt-1 text-sm uppercase tracking-widest text-zinc-300">
-              Active Lanes
             </p>
           </div>
         </section>
